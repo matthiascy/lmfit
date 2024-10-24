@@ -108,11 +108,14 @@ pub struct LevenbergMarquardt<F> {
     stepbound: F,
     patience: usize,
     scale_diag: bool,
+    /// The purpose of the loss function is to reduce the influence of outliers on the solution.
+    /// Note that the loss function isn't the objective function that is minimised.
+    pub(crate) loss: fn(F) -> F,
 }
 
 impl<F: RealField + Float> Default for LevenbergMarquardt<F> {
     fn default() -> Self {
-        Self::new()
+        Self::new() // loss function is the identity function
     }
 }
 
@@ -127,6 +130,7 @@ impl<F: RealField + Float> LevenbergMarquardt<F> {
                 stepbound: convert(100.0),
                 patience: 100,
                 scale_diag: true,
+                loss: |x| x,
             }
         } else {
             let user_tol = F::default_epsilon() * convert(30.0);
@@ -137,8 +141,15 @@ impl<F: RealField + Float> LevenbergMarquardt<F> {
                 stepbound: convert(100.0),
                 patience: 100,
                 scale_diag: true,
+                loss: |x| x,
             }
         }
+    }
+
+    pub fn new_with_loss(loss: fn(F) -> F) -> Self {
+        let mut lm = Self::new();
+        lm.loss = loss;
+        lm
     }
 
     /// Set the relative error desired in the objective function `$f$`.
@@ -357,7 +368,7 @@ where
         // Evaluate at start point
         let x = target.params();
         let (residuals, residuals_norm) = if let Some(residuals) = target.residuals() {
-            let norm = enorm(&residuals);
+            let norm = (config.loss)(enorm(&residuals));
             report.objective_function = norm * norm * convert(0.5);
             (residuals, norm)
         } else {
